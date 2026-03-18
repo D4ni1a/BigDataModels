@@ -1,0 +1,16 @@
+original_product_id,original_keywords,similar_product_id,similar_category_code,similar_brand,rank
+1004767,electronics smartphone,1004253,electronics.smartphone,apple,0.09910322
+1004856,electronics smartphone,1004711,electronics.smartphone,haier,0.09910322
+1004870,electronics smartphone,1004709,electronics.smartphone,huawei,0.09910322
+1005115,electronics smartphone,1005014,electronics.smartphone,samsung,0.09910322
+4100126,stationery cartrige,16600191,stationery.cartrige,bugati,0.09910322
+4100129,stationery cartrige,4100231,stationery.cartrige,sony,0.09910322
+4100138,stationery cartrige,12900733,stationery.cartrige,hp,0.09910322
+4100151,stationery cartrige,12900998,stationery.cartrige,katun,0.09910322
+4802036,electronics audio headphone,4800987,electronics.audio.headphone,sony,0.26832977
+4803977,electronics audio headphone,4804455,electronics.audio.headphone,jbl,0.26832977
+4804055,electronics audio headphone,4803551,electronics.audio.headphone,ritmix,0.26832977
+4804056,electronics audio headphone,4804339,electronics.audio.headphone,razer,0.26832977
+4804295,electronics audio headphone,4803751,electronics.audio.headphone,sony,0.26832977
+1004767,electronics smartphone,1005015,electronics.smartphone,samsung,0.09910322
+1004856,electronics smartphone,18000067,electronics.smartphone,apple,0.09910322
