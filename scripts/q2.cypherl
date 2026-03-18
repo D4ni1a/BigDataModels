@@ -1,0 +1,16 @@
+// q2.cypher
+// Top personalized product recommendations for a given user (parameter $user_id)
+MATCH (u:User {user_id: $user_id})-[:PERFORMED]->(e:Event)-[:INVOLVES]->(p:Product)-[:HAS_CATEGORY]->(cat:Category)
+WITH u, cat, COUNT(*) AS cat_freq
+ORDER BY cat_freq DESC
+LIMIT 3
+WITH u, COLLECT(cat.category_id) AS top_cat_ids
+UNWIND top_cat_ids AS cat_id
+MATCH (cat:Category {category_id: cat_id})<-[:HAS_CATEGORY]-(prod:Product)
+WHERE NOT EXISTS { (u)-[:PERFORMED]->(:Event)-[:INVOLVES]->(prod) }
+OPTIONAL MATCH (prod)<-[:INVOLVES]-(e:Event)
+RETURN $user_id AS user_id,
+       cat_id AS category_id,
+       prod.product_id AS product_id,
+       COUNT(e) AS total_interactions
+ORDER BY cat_id, total_interactions DESC

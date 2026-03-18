@@ -63,6 +63,7 @@ def run_q3():
         df.to_csv("../output/q3_mongo.csv", index=False)
     else:
         print("No similar products found")
+        pass
 
     client.close()
 

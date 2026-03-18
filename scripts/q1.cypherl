@@ -1,0 +1,21 @@
+// q1.cypher
+// Analyze campaign effectiveness and the role of social networks
+MATCH (m:Message)-[:BELONGS_TO]->(c:Campaign)
+WHERE m.flags.is_purchased IS NOT NULL
+WITH c, COLLECT(m) AS msgs
+WITH c,
+     SIZE(msgs) AS total_sent,
+     SIZE([m IN msgs WHERE m.flags.is_purchased]) AS total_purchased,
+     [m IN msgs WHERE m.flags.is_purchased | m.user_id] AS purchaser_ids
+UNWIND purchaser_ids AS uid
+MATCH (u:User {user_id: uid})
+OPTIONAL MATCH (u)-[:FRIENDS_WITH]-(friend:User)
+WHERE friend.user_id IN purchaser_ids
+WITH c, total_sent, total_purchased, COLLECT(DISTINCT uid) AS purchasers_with_friend
+RETURN c.campaign_id AS campaign_id,
+       total_sent,
+       total_purchased,
+       toFloat(total_purchased) / total_sent * 100 AS conversion_rate_pct,
+       size(purchasers_with_friend) AS purchasers_with_friend_purchased,
+       toFloat(size(purchasers_with_friend)) / total_purchased * 100 AS pct_of_purchasers_with_friend
+ORDER BY conversion_rate_pct DESC

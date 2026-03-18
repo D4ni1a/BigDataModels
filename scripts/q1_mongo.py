@@ -71,6 +71,7 @@ def run_q1():
         df.to_csv("../output/q1_mongo.csv", index=False)
     else:
         print("No data")
+        pass
 
     client.close()
 

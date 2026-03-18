@@ -51,8 +51,10 @@ def run_q3():
             # Display results table
             print(tabulate(df, headers='keys', tablefmt='psql', showindex=False))
             df.to_csv("../output/q3_psql.csv", index=False)
+            pass
         else:
             print("Query returned no results")
+            pass
             
     except Exception as e:
         print(f"Query execution failed: {e}")

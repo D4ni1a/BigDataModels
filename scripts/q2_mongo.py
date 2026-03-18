@@ -50,6 +50,7 @@ def run_q2():
         df.to_csv("../output/q2_mongo.csv", index=False)
     else:
         print("No recommendations found")
+        pass
 
     client.close()
 

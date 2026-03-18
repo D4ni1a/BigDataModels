@@ -1,0 +1,26 @@
+// q3.cypher
+// Expand recommendations using full‑text search on category_code
+// Assumes a full‑text index named 'productCategory' on Category(category_code)
+MATCH (u:User {user_id: $user_id})-[:PERFORMED]->(e:Event)-[:INVOLVES]->(p:Product)-[:HAS_CATEGORY]->(cat:Category)
+WITH u, cat, COUNT(*) AS cat_freq
+ORDER BY cat_freq DESC
+LIMIT 3
+WITH u, COLLECT(cat) AS top_cats
+UNWIND top_cats AS cat
+MATCH (cat)<-[:HAS_CATEGORY]-(base_prod:Product)
+WHERE NOT EXISTS { (u)-[:PERFORMED]->(:Event)-[:INVOLVES]->(base_prod) }
+WITH DISTINCT base_prod
+LIMIT 10   // take up to 10 base products to expand from
+MATCH (base_prod)-[:HAS_CATEGORY]->(base_cat:Category)
+CALL db.index.fulltext.queryNodes('productCategory', base_cat.category_code) YIELD node AS similar_cat, score
+MATCH (similar_cat)<-[:HAS_CATEGORY]-(similar_prod:Product)
+WHERE similar_prod.product_id <> base_prod.product_id
+  AND NOT EXISTS { (u)-[:PERFORMED]->(:Event)-[:INVOLVES]->(similar_prod) }
+RETURN base_prod.product_id AS original_product_id,
+       base_cat.category_code AS original_category_code,
+       similar_prod.product_id AS similar_product_id,
+       similar_cat.category_code AS similar_category_code,
+       similar_prod.brand AS similar_brand,
+       score
+ORDER BY original_product_id, score DESC
+LIMIT 50
