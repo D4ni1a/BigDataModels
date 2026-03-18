@@ -1,26 +1,55 @@
-// q3.cypher
-// Expand recommendations using full‑text search on category_code
-// Assumes a full‑text index named 'productCategory' on Category(category_code)
-MATCH (u:User {user_id: $user_id})-[:PERFORMED]->(e:Event)-[:INVOLVES]->(p:Product)-[:HAS_CATEGORY]->(cat:Category)
-WITH u, cat, COUNT(*) AS cat_freq
-ORDER BY cat_freq DESC
-LIMIT 3
-WITH u, COLLECT(cat) AS top_cats
-UNWIND top_cats AS cat
-MATCH (cat)<-[:HAS_CATEGORY]-(base_prod:Product)
-WHERE NOT EXISTS { (u)-[:PERFORMED]->(:Event)-[:INVOLVES]->(base_prod) }
-WITH DISTINCT base_prod
-LIMIT 10   // take up to 10 base products to expand from
-MATCH (base_prod)-[:HAS_CATEGORY]->(base_cat:Category)
-CALL db.index.fulltext.queryNodes('productCategory', base_cat.category_code) YIELD node AS similar_cat, score
-MATCH (similar_cat)<-[:HAS_CATEGORY]-(similar_prod:Product)
-WHERE similar_prod.product_id <> base_prod.product_id
-  AND NOT EXISTS { (u)-[:PERFORMED]->(:Event)-[:INVOLVES]->(similar_prod) }
-RETURN base_prod.product_id AS original_product_id,
-       base_cat.category_code AS original_category_code,
-       similar_prod.product_id AS similar_product_id,
-       similar_cat.category_code AS similar_category_code,
-       similar_prod.brand AS similar_brand,
-       score
-ORDER BY original_product_id, score DESC
-LIMIT 50
+// Expanded recommendations via category_code similarity
+WITH $user_id AS target_id
+
+// 1. Find user and all products they have already interacted with
+MATCH (u:User {user_id: target_id})
+OPTIONAL MATCH (u)-[r:VIEWED|PURCHASED]->(:Category)
+WITH u, COLLECT(DISTINCT r.product_id) AS raw_seen
+WITH u, [pid IN raw_seen WHERE pid IS NOT NULL] AS seen_products
+
+// 2. Determine user's top 3 categories by interaction count
+MATCH (u)-[r2:VIEWED|PURCHASED]->(cat:Category)
+WHERE r2.product_id IS NOT NULL
+WITH u, seen_products, cat, COUNT(r2) AS cat_interactions
+ORDER BY cat_interactions DESC
+WITH u, seen_products, COLLECT(cat)[..3] AS top_categories
+
+// 3. From these top categories, collect base products (popular unseen)
+UNWIND top_categories AS category
+MATCH (other:User)-[r3:VIEWED|PURCHASED]->(category)
+WHERE r3.product_id IS NOT NULL AND NOT r3.product_id IN seen_products
+WITH u, seen_products, category, r3.product_id AS product, COUNT(r3) AS pop
+ORDER BY pop DESC
+WITH u, seen_products, category, COLLECT(product)[..5] AS base_products_in_cat
+UNWIND base_products_in_cat AS base_product
+WITH u, seen_products, base_product,
+     category.category_code AS base_cat_code,
+     category.category_id AS base_cat_id
+
+// 4. Find similar categories using simple string matching
+MATCH (similar:Category)
+WHERE similar.category_id <> base_cat_id
+  AND (similar.category_code CONTAINS base_cat_code
+       OR base_cat_code CONTAINS similar.category_code
+       OR similar.category_code STARTS WITH LEFT(base_cat_code, 5))
+WITH u, seen_products, base_product, base_cat_code, base_cat_id,
+     similar.category_id AS sim_cat_id,
+     similar.category_code AS sim_cat_code
+
+// 5. Get popular products from similar categories
+MATCH (other:User)-[r4:VIEWED|PURCHASED]->(similar:Category {category_id: sim_cat_id})
+WHERE r4.product_id IS NOT NULL
+  AND NOT r4.product_id IN seen_products
+  AND r4.product_id <> base_product
+WITH u, sim_cat_id, sim_cat_code, r4.product_id AS sim_product, COUNT(r4) AS sim_pop
+ORDER BY sim_pop DESC
+
+// 6. Collect and output the recommendations
+WITH u.user_id AS uid, sim_product, sim_cat_id, sim_cat_code, sim_pop
+RETURN DISTINCT uid AS user_id,
+       sim_product AS similar_product_id,
+       sim_cat_id AS category_id,
+       sim_cat_code AS category_code,
+       sim_pop AS global_interactions
+ORDER BY global_interactions DESC
+LIMIT 20

@@ -1,16 +1,51 @@
-// q2.cypher
-// Top personalized product recommendations for a given user (parameter $user_id)
-MATCH (u:User {user_id: $user_id})-[:PERFORMED]->(e:Event)-[:INVOLVES]->(p:Product)-[:HAS_CATEGORY]->(cat:Category)
-WITH u, cat, COUNT(*) AS cat_freq
-ORDER BY cat_freq DESC
-LIMIT 3
-WITH u, COLLECT(cat.category_id) AS top_cat_ids
-UNWIND top_cat_ids AS cat_id
-MATCH (cat:Category {category_id: cat_id})<-[:HAS_CATEGORY]-(prod:Product)
-WHERE NOT EXISTS { (u)-[:PERFORMED]->(:Event)-[:INVOLVES]->(prod) }
-OPTIONAL MATCH (prod)<-[:INVOLVES]-(e:Event)
-RETURN $user_id AS user_id,
-       cat_id AS category_id,
-       prod.product_id AS product_id,
-       COUNT(e) AS total_interactions
-ORDER BY cat_id, total_interactions DESC
+// Top personalized product recommendations for a given user
+WITH $user_id AS target_id
+
+// 1. Find the user and all products they've seen
+MATCH (u:User {user_id: target_id})
+OPTIONAL MATCH (u)-[r:VIEWED|PURCHASED]->(:Category)
+WITH u, COLLECT(DISTINCT r.product_id) AS raw_seen
+WITH u, [pid IN raw_seen WHERE pid IS NOT NULL] AS seen_products
+
+// 2. Compute user's category preference scores
+MATCH (u)-[r2:VIEWED|PURCHASED]->(cat:Category)
+WHERE r2.product_id IS NOT NULL
+WITH u, seen_products, cat, COUNT(r2) AS cat_score
+WITH u, seen_products, cat, cat_score
+ORDER BY cat_score DESC
+WITH u, seen_products, COLLECT({cat: cat, score: cat_score}) AS cat_prefs
+
+// 3. Generate candidate products from all categories the user has interacted with
+//    (or all categories if the user has no history – but then we use global popularity)
+UNWIND (CASE WHEN SIZE(cat_prefs) > 0 THEN cat_prefs ELSE [{cat: null, score: 0}] END) AS pref
+WITH u, seen_products, pref.cat AS category, pref.score AS cat_score
+
+// 4. For each category, find products and their global popularity
+OPTIONAL MATCH (other:User)-[r3:VIEWED|PURCHASED]->(category)
+WHERE r3.product_id IS NOT NULL
+  AND (category IS NOT NULL) // handle null category for global fallback
+WITH u, seen_products, category, cat_score, r3.product_id AS product, COUNT(r3) AS global_pop
+WHERE product IS NOT NULL AND NOT product IN seen_products
+
+// 5. Compute a combined score: cat_score * global_pop (or just global_pop if no cat_score)
+WITH u.user_id AS uid, product, global_pop,
+     COALESCE(cat_score, 1) AS cat_weight,
+     category.category_id AS cat_id
+WITH uid, product, global_pop, cat_weight, cat_id,
+     global_pop * cat_weight AS combined_score
+
+// 6. Sort by combined score and take top 10
+WITH uid, product, global_pop, cat_id, combined_score
+ORDER BY combined_score DESC
+WITH uid, COLLECT({product: product, pop: global_pop, cat: cat_id})[..10] AS candidates
+
+// 7. Assign final rank
+UNWIND RANGE(0, SIZE(candidates)-1) AS idx
+WITH uid, candidates[idx] AS rec, idx + 1 AS rank
+
+RETURN uid AS user_id,
+       rec.cat AS category_id,
+       rec.product AS product_id,
+       rec.pop AS total_interactions,
+       rank AS rank_in_category
+ORDER BY rank

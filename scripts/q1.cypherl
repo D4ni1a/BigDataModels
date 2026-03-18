@@ -1,21 +1,43 @@
-// q1.cypher
-// Analyze campaign effectiveness and the role of social networks
-MATCH (m:Message)-[:BELONGS_TO]->(c:Campaign)
-WHERE m.flags.is_purchased IS NOT NULL
-WITH c, COLLECT(m) AS msgs
+// Campaign effectiveness analysis with social network influence
+// For each campaign, compute:
+// - total_sent, total_purchased, conversion rate
+// - number of purchasers who have a friend that also purchased from the same campaign
+
+// 1. Campaign-level statistics
+MATCH (c:Campaign)
+OPTIONAL MATCH (c)<-[r:RECEIVED]-(u:User)
 WITH c,
-     SIZE(msgs) AS total_sent,
-     SIZE([m IN msgs WHERE m.flags.is_purchased]) AS total_purchased,
-     [m IN msgs WHERE m.flags.is_purchased | m.user_id] AS purchaser_ids
-UNWIND purchaser_ids AS uid
-MATCH (u:User {user_id: uid})
-OPTIONAL MATCH (u)-[:FRIENDS_WITH]-(friend:User)
-WHERE friend.user_id IN purchaser_ids
-WITH c, total_sent, total_purchased, COLLECT(DISTINCT uid) AS purchasers_with_friend
-RETURN c.campaign_id AS campaign_id,
+     COUNT(r) AS total_sent,
+     SUM(CASE WHEN r.is_purchased THEN 1 ELSE 0 END) AS total_purchased
+
+WITH c, total_sent, total_purchased,
+     CASE WHEN total_sent > 0
+          THEN 100.0 * total_purchased / total_sent
+          ELSE 0
+     END AS conversion_rate
+
+// 2. For each campaign, find purchasers who have at least one friend that also purchased
+OPTIONAL MATCH (c)<-[rp:RECEIVED {is_purchased: true}]-(purchaser:User)
+WITH c, total_sent, total_purchased, conversion_rate, purchaser
+
+// 3. Check if the purchaser has a friend who also purchased from the same campaign
+OPTIONAL MATCH (purchaser)-[:FRIEND]-(friend:User)
+WHERE (friend)-[:RECEIVED {is_purchased: true}]->(c)
+
+// 4. Collect distinct purchasers that satisfy the condition
+WITH c, total_sent, total_purchased, conversion_rate,
+     COLLECT(DISTINCT purchaser) AS purchasers_with_friend
+
+// 5. Final output
+RETURN c.campaign_id,
+       c.campaign_type,
+       c.channel,
        total_sent,
        total_purchased,
-       toFloat(total_purchased) / total_sent * 100 AS conversion_rate_pct,
-       size(purchasers_with_friend) AS purchasers_with_friend_purchased,
-       toFloat(size(purchasers_with_friend)) / total_purchased * 100 AS pct_of_purchasers_with_friend
+       conversion_rate AS conversion_rate_pct,
+       SIZE(purchasers_with_friend) AS purchasers_with_friend_purchased,
+       CASE WHEN total_purchased > 0
+            THEN 100.0 * SIZE(purchasers_with_friend) / total_purchased
+            ELSE 0
+       END AS pct_of_purchasers_with_friend
 ORDER BY conversion_rate_pct DESC
